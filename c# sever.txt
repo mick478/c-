@@ -1,0 +1,148 @@
+sever
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace ConsoleApplication1
+{
+    class Program
+    {
+        private static byte[] _buffer = new byte[1024];
+        private static List<Socket> _clientSockets = new List<Socket>();
+        private static Socket _severSocket = new Socket
+            (AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
+        
+        static void Main(string[] args)
+        {
+            Console.Title = "sever";
+            SetupServer();
+            Console.ReadLine();
+        }
+        private static void SetupServer()
+        {
+            Console.WriteLine("setting up server...");
+            _severSocket.Bind(new IPEndPoint(IPAddress.Any, 100));
+            _severSocket.Listen(1);
+            _severSocket.BeginAccept(new AsyncCallback(AcceptCallback), null);
+        }
+
+        private static void AcceptCallback(IAsyncResult AR)
+        {
+            Socket socket = _severSocket.EndAccept(AR);
+            _clientSockets.Add(socket);
+            Console.WriteLine("client connected");
+            socket.BeginReceive(_buffer, 0, _buffer.Length, SocketFlags.None, new AsyncCallback(ReceiveCallback), socket);
+            _severSocket.BeginAccept(new AsyncCallback(AcceptCallback), null);
+        }
+
+
+
+        private static void ReceiveCallback(IAsyncResult AR)
+        {
+            Socket socket = (Socket)AR.AsyncState;
+            int received = socket.EndReceive(AR);
+            byte[] databuf = new byte[received];
+            Array.Copy(_buffer, databuf, received);
+
+            string text = Encoding.ASCII.GetString(databuf);
+            Console.WriteLine("text received:" + text);
+
+            string response = string.Empty;
+
+            if (text.ToLower() != "get time")
+            {
+                response = "invalid request";
+            }
+            else
+            {
+                response = DateTime.Now.ToLongTimeString();
+            }
+
+            byte[] data = Encoding.ASCII.GetBytes(response);
+            socket.BeginSend(data, 0, data.Length, SocketFlags.None, new AsyncCallback(SendCallback), socket);
+            socket.BeginReceive(_buffer, 0, _buffer.Length, SocketFlags.None, new AsyncCallback(ReceiveCallback), socket);
+        }
+
+
+
+        private static void SendCallback(IAsyncResult AR)
+        {
+            Socket socket = (Socket)AR.AsyncState;
+            socket.EndSend(AR);
+        }
+
+    }
+}
+
+
+client
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace ConsoleApplication3
+{
+    class Program
+    {
+        private static Socket _clientSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
+
+        static void Main(string[] args)
+        {
+            Console.Title = "client";
+            LoopConnect();
+            SendLoop();
+            Console.ReadLine();
+        }
+
+        private static void SendLoop()
+        {
+            while (true)
+            {
+                Console.Write("enter a request:");
+                string req = Console.ReadLine();
+                byte[] buffer = Encoding.ASCII.GetBytes(req);
+                _clientSocket.Send(buffer);
+                byte[] receivedBuf = new byte[1024];
+                int rec = _clientSocket.Receive(receivedBuf);
+                byte[] data = new byte[rec];
+                Array.Copy(receivedBuf, data, rec);
+                Console.WriteLine("received:" + Encoding.ASCII.GetString(data));
+
+            }
+        }
+
+        private static void LoopConnect()
+        {
+            int attempts = 0;
+            while (!_clientSocket.Connected)
+            {
+                try
+                {
+                    attempts++;
+                    _clientSocket.Connect(IPAddress.Loopback, 100);
+
+                }
+                catch (SocketException)
+                {
+                    Console.Clear();
+                    Console.WriteLine("connection attempts:" + attempts.ToString());
+                }
+            }
+
+            Console.Clear();
+            Console.WriteLine("connected");
+        }
+    }
+}
